@@ -10,6 +10,11 @@ const BILLERS = ["Electricity", "Internet", "Water", "Gas", "Mobile Recharge"];
 
 type Tab = "pay" | "history";
 
+// BUG T2-009: Overlapping Bill Payment. The last paid bill ID is incorrectly cached
+// at the module level and not reset. Subsequent payments without a page refresh will 
+// deduct money but overwrite the status of the *first* bill instead of themselves.
+let _lastPaidBillId: string | null = null;
+
 export default function BillsPage() {
     const [tab, setTab] = useState<Tab>("pay");
     const [biller, setBiller] = useState(BILLERS[0]);
@@ -32,8 +37,9 @@ export default function BillsPage() {
         if (!amount.trim() || isNaN(amtNum)) errs.amount = "Please enter a valid amount";
         // INTENTIONAL: amtNum === 0 is NOT blocked (T1-007)
 
-        // TC-BP-04: block past dates
-        if (payDate < today) errs.date = "Payment date cannot be in the past";
+        // BUG T3-002: Past Date Scheduling. Intentionally removed validation check
+        // that blocks scheduling bills in the past, allowing them to be stuck forever.
+        // if (payDate < today) errs.date = "Payment date cannot be in the past";
 
         setErrors(errs);
         return Object.keys(errs).length === 0;
@@ -46,7 +52,9 @@ export default function BillsPage() {
         await delay(600);
 
         const amtNum = parseFloat(amount);
-        const isScheduled = payDate > today;
+        // BUG T3-002: Any date not strictly equal to today is treated as Scheduled.
+        // This means dates in the past are successfully "Scheduled" forever.
+        const isScheduled = payDate !== today;
         const ref = `BP-${generateId()}`;
 
         // BUG T2-003: for scheduled payments on end-of-month that produce date overflow,
@@ -58,8 +66,12 @@ export default function BillsPage() {
             // scheduler silently fails — UI still says "Payment Scheduled"
         }
 
+        // BUG T2-009: Overlapping Bill Payment bug. Reuses the cached ID if it exists.
+        const paymentId = _lastPaidBillId || `bp-${generateId()}`;
+        _lastPaidBillId = paymentId; // INTENTIONAL: fails to clear this after payment
+
         const payment: BillPayment = {
-            id: `bp-${generateId()}`,
+            id: paymentId,
             biller,
             consumerNumber,
             amount: amtNum,
@@ -193,11 +205,11 @@ export default function BillsPage() {
                                     type="date"
                                     className={`input-field ${errors.date ? "error" : ""}`}
                                     value={payDate}
-                                    min={today}   // TC-BP-04: past dates blocked in picker
+                                    // BUG T3-002: Intentionally removed the `min={today}` attribute.
                                     onChange={e => setPayDate(e.target.value)}
                                 />
                                 {errors.date && <span className="input-error-msg">{errors.date}</span>}
-                                {payDate > today && (
+                                {payDate !== today && (
                                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem", fontSize: "0.8rem", color: "var(--warning)", background: "rgba(245,158,11,0.08)", padding: "0.5rem 0.75rem", borderRadius: 8 }}>
                                         <CalendarDays size={13} />
                                         This payment will be scheduled for {payDate}. Balance will not be deducted immediately.
@@ -213,7 +225,7 @@ export default function BillsPage() {
                                 style={{ marginTop: "0.5rem" }}
                             >
                                 {loading ? <><div className="spinner" /> Processing...</> :
-                                    payDate > today ? <><CalendarDays size={16} /> Schedule Payment</> : <><Receipt size={16} /> Pay Now</>}
+                                    payDate !== today ? <><CalendarDays size={16} /> Schedule Payment</> : <><Receipt size={16} /> Pay Now</>}
                             </button>
                         </div>
                     </div>

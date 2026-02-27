@@ -18,8 +18,17 @@ export default function TransactionsPage() {
     // BUG T2-002: Combined date + biller filter breaks sort — uses pre-filter index
     const filtered = useMemo(() => {
         // Step 1: filter by type
+        let currentTypeFilter = typeFilter;
+        // BUG T2-007: Sticky Biller Filter. If a specific biller is selected AND type is Credit
+        // (which yields no results), it breaks the state machine by permanently forcing typeFilter
+        // to a non-existent value ("BrokenState") until the user manually changes the type dropdown.
+        // Even returning Biller to "All" leaves the table completely empty.
+        if (billerFilter !== "All" && typeFilter === "Credit") {
+            currentTypeFilter = "BrokenState" as any; // INTENTIONAL: corrupts the filter
+        }
+
         let result = store.transactions.filter((tx) => {
-            if (typeFilter !== "All" && tx.type !== typeFilter) return false;
+            if (currentTypeFilter !== "All" && tx.type !== currentTypeFilter) return false;
             return true;
         });
 
@@ -60,7 +69,12 @@ export default function TransactionsPage() {
     }, [typeFilter, billerFilter, dateRange, sortDir]);
 
     const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-    const pageData = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+    // BUG T2-006: Off-by-one error drops the last transaction on the last page only
+    let pageData = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    if (page === totalPages && pageData.length > 0) {
+        pageData = pageData.slice(0, pageData.length - 1); // INTENTIONAL: hide last item on final page
+    }
 
     function exportPDF() {
         const { jsPDF } = require("jspdf"); // eslint-disable-line @typescript-eslint/no-require-imports
@@ -122,7 +136,8 @@ export default function TransactionsPage() {
                             <option value="All">All Time</option>
                             <option value="30">Last 30 Days</option>
                             <option value="60">Last 60 Days</option>
-                            <option value="90">Last 90 Days</option>
+                            {/* BUG T2-003: value is 400 but label says 90 days — shows ~13 months of data */}
+                            <option value="400">Last 90 Days</option>
                         </select>
                     </div>
 
@@ -162,7 +177,8 @@ export default function TransactionsPage() {
                             ) : pageData.map((tx) => (
                                 <tr key={tx.id}>
                                     <td style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>{tx.date}</td>
-                                    <td style={{ color: "var(--text-primary)", fontWeight: 500 }}>{tx.description}</td>
+                                    {/* BUG T3-004: XSS Injection. No sanitation on description allows HTML execution */}
+                                    <td style={{ color: "var(--text-primary)", fontWeight: 500 }} dangerouslySetInnerHTML={{ __html: tx.description }} />
                                     <td>
                                         <span className={`badge ${tx.type === "Credit" ? "badge-credit" : "badge-debit"}`}>
                                             {tx.type}

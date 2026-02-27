@@ -10,6 +10,7 @@ export default function SettingsPage() {
     const u = store.user;
 
     const [name, setName] = useState(u.name);
+    const [email, setEmail] = useState(u.email); // BUG T3-003: local state for disable hack
     const [phone, setPhone] = useState(u.phone);
     const [address, setAddress] = useState(u.address);
     const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
@@ -35,6 +36,17 @@ export default function SettingsPage() {
         store.user.name = name;
         store.user.phone = phone;
         store.user.address = address;
+
+        // BUG T3-003: Disabled Field Override. The backend blindly trusts the client-submitted email.
+        // If a QA tester removes the 'disabled' tag in DOM DevTools and types a new email,
+        // it successfully mutates the account record in the store.
+        store.user.email = email;
+
+        // BUG T2-010: Zombie Notification States.
+        // The notifications state is ONLY actually flushed to the store when the "Save Profile"
+        // button is clicked, completely ignoring the "Save Preferences" button below it.
+        store.user.notifications.email = emailNotif;
+        store.user.notifications.sms = smsNotif;
 
         // Short delay then show toast regardless of validation
         await delay(400);
@@ -79,8 +91,11 @@ export default function SettingsPage() {
 
     async function handleSaveNotifications() {
         setLoading(true);
-        store.user.notifications.email = emailNotif;
-        store.user.notifications.sms = smsNotif;
+        // BUG T2-010: Zombie Notification States.
+        // The UI updates and success toast fires, but we INTENTIONALLY skip saving to the store.
+        // store.user.notifications.email = emailNotif;
+        // store.user.notifications.sms = smsNotif;
+
         await delay(300);
         setToast({ message: "Notification preferences saved", type: "success" });
         setLoading(false);
@@ -106,7 +121,7 @@ export default function SettingsPage() {
 
                     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                         <div className="input-group">
-                            <label className="input-label">Full Name</label>
+                            <label className="input-label">Full Name <span style={{ color: "var(--danger)" }}>*</span></label>
                             <input
                                 id="settings-name"
                                 type="text"
@@ -119,7 +134,7 @@ export default function SettingsPage() {
                         </div>
 
                         <div className="input-group">
-                            <label className="input-label">Phone Number</label>
+                            <label className="input-label">Phone Number <span style={{ color: "var(--danger)" }}>*</span></label>
                             <input
                                 id="settings-phone"
                                 type="text"
@@ -145,7 +160,8 @@ export default function SettingsPage() {
                         <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.25rem" }}>
                             <div style={{ flex: 1 }}>
                                 <label className="input-label">Email (Read Only)</label>
-                                <input type="text" className="input-field" value={u.email} disabled style={{ opacity: 0.5 }} />
+                                {/* BUG T3-003: removing 'disabled' via DevTools makes this fully editable */}
+                                <input type="text" className="input-field" value={email} onChange={e => setEmail(e.target.value)} disabled style={{ opacity: 0.5 }} />
                             </div>
                             <div style={{ flex: 1 }}>
                                 <label className="input-label">Account Type (Read Only)</label>

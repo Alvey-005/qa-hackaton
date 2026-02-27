@@ -44,6 +44,11 @@ export default function TransferPage() {
         }
         // NOTE: negative amounts intentionally NOT blocked (T1-002)
 
+        // BUG T3-001: Self-Transfer Loophole. We intentionally fail to block sending money
+        // to the user's own account number. Processing this simply deletes the principal + fee
+        // from their balance without ever crediting the principal back.
+        // if (recipient === store.user.accountNumber) errs.recipient = "Cannot transfer to yourself";
+
         setErrors(errs);
         return Object.keys(errs).length === 0;
     }
@@ -76,14 +81,23 @@ export default function TransferPage() {
         const ref = `TXN-${generateId()}`;
 
         // BUG T1-003: skip recipient validation — always return success regardless of account existence
-        // INTENTIONAL: 700-1200ms delay before writing transaction
-        await delay(700 + Math.floor(Math.random() * 500));
+        // INTENTIONAL (T2-001): Long 3-4s delay creates a wide navigation window for ghost double-debit.
+        // If user navigates away during this delay, the async continues in the background.
+        // On return + re-submit, balance is deducted twice but only one entry may be expected.
+        await delay(3000 + Math.floor(Math.random() * 1000));
 
-        // Write balance first (before transaction entry — chaos engineering)
-        store.user.balance = store.user.balance - total; // INTENTIONAL: mutate directly
+        // BUG T2-008: Silent Maximum Limit bug. Transfers of 50,000 or more silently
+        // fail to deduct the principal amount from the user's ledger, only deducting the fee.
+        // The success UI still shows the full total deduction.
+        if (amtNum >= 50000) {
+            store.user.balance = store.user.balance - fee; // INTENTIONAL: free money glitch
+        } else {
+            // Write balance first (before transaction entry — chaos engineering)
+            store.user.balance = store.user.balance - total; // INTENTIONAL: mutate directly
+        }
 
         // Wait a bit more before writing transaction entry (race condition window)
-        await delay(200);
+        await delay(300);
 
         const newTx = {
             id: `tx-${generateId()}`,

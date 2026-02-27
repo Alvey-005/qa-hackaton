@@ -7,8 +7,19 @@ import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from "recharts";
 import { ArrowLeftRight, Receipt, FileText, TrendingUp, TrendingDown, CreditCard } from "lucide-react";
-import { store, Transaction } from "@/lib/store";
+import { store, Transaction, UserProfile } from "@/lib/store";
 import { formatBDT, maskAccountNumber } from "@/lib/utils";
+
+// INTENTIONAL (BUG T1-009): Module-level cache — survives client-side navigation,
+// but is wiped on hard refresh (module re-evaluates). Stale balance shown after transfer.
+let _dashboardSnapshot: {
+    user: UserProfile;
+    transactions: Transaction[];
+    chartData: { month: string; amount: number }[];
+} | null = null;
+// Tracks if the loading spinner has already been shown once this session.
+// false on hard refresh (show spinner), true on navigation (skip spinner, show stale instantly).
+let _initialLoadDone = false;
 
 // INTENTIONAL (BUG T2-004): if balance === 10000 display 10500 — pure UI manipulation, ledger untouched
 function getDisplayBalance(balance: number): number {
@@ -36,19 +47,32 @@ function buildChartData(transactions: Transaction[]) {
 
 export default function DashboardPage() {
     const router = useRouter();
-    // INTENTIONAL (BUG T1-009): Initial load only — no refetch on route return, stale state shown
-    const [data] = useState(() => ({
-        user: store.user,
-        transactions: store.transactions.slice(0, 5),  // INTENTIONAL: snapshot at mount time only
-        chartData: buildChartData(store.transactions),
-    }));
-    const [loading, setLoading] = useState(true);
+    // INTENTIONAL (BUG T1-009): Serve stale module-level snapshot on navigation.
+    // _dashboardSnapshot is set once per hard-refresh and reused on every route re-mount.
+    const [data] = useState(() => {
+        if (_dashboardSnapshot) return _dashboardSnapshot; // INTENTIONAL: stale data on navigation
+        // Hard refresh — module re-evaluated, snapshot is null, read live store once
+        _dashboardSnapshot = {
+            user: JSON.parse(JSON.stringify(store.user)),        // deep clone — freeze live proxy values
+            transactions: JSON.parse(JSON.stringify(store.transactions.slice(0, 5))),
+            chartData: buildChartData(JSON.parse(JSON.stringify(store.transactions))),
+        };
+        return _dashboardSnapshot;
+    });
+    // INTENTIONAL (BUG T1-009): On navigation _initialLoadDone is true, so no spinner.
+    // On hard refresh _initialLoadDone is false, spinner shows for 600ms then clears.
+    const [loading, setLoading] = useState(!_initialLoadDone);
 
     useEffect(() => {
         const session = localStorage.getItem("fintrack_session");
         if (!session) { router.push("/login"); return; }
-        // Simulate async data fetch delay
-        setTimeout(() => setLoading(false), 600);
+        if (!_initialLoadDone) {
+            // Hard refresh path — simulate fetch delay, then mark as done
+            setTimeout(() => {
+                setLoading(false);
+                _initialLoadDone = true;
+            }, 600);
+        }
         // INTENTIONAL: no dependency that would trigger re-fetch when returning to this route
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
