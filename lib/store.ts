@@ -104,7 +104,7 @@ const defaultStore = {
     user: {
         name: "Abu Hena",
         email: "user@fintrack.com",
-        password: "Pass1234",
+        password: "SecurePass2026!",
         phone: "01700000000",
         address: "123 Main Street, Dhaka",
         accountNumber: "1234567890123456",

@@ -167,12 +167,6 @@ export default function LoginPage() {
                         )}
                     </button>
                 </div>
-
-                <div style={{ marginTop: "1.5rem", textAlign: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                    <p style={{ margin: 0 }}>
-                        Demo credentials: <span style={{ color: "var(--text-secondary)" }}>user@fintrack.com / Pass1234</span>
-                    </p>
-                </div>
             </div>
         </div>
     );
